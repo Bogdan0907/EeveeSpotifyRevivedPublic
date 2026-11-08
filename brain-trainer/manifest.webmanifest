@@ -1,0 +1,10 @@
+{
+  "name": "Synapse Routine",
+  "short_name": "Synapse",
+  "description": "A daily, research-based cognitive training routine.",
+  "start_url": "./index.html#today",
+  "display": "standalone",
+  "background_color": "#0c1120",
+  "theme_color": "#141b2e",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

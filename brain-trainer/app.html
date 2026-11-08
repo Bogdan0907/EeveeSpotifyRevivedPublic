@@ -1,0 +1,925 @@
+<title>Synapse Routine</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: lab-notebook app. Sticky tab bar, one column of routine steps, drills run in a full-screen stage. */
+:root {
+  --bg: #eef1f6;
+  --surface: #ffffff;
+  --ink: #141b2e;
+  --muted: #59637d;
+  --line: #d6dce9;
+  --accent: #2f4cdd;
+  --accent-ink: #ffffff;
+  --accent-soft: #e2e7fc;
+  --warm: #c86f1c;
+  --warm-soft: #fbead8;
+  --good: #1d8656;
+  --bad: #c33f37;
+  --grid: rgba(47, 76, 221, 0.06);
+  --f-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --f-body: "Atkinson Hyperlegible", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "SF Mono", Consolas, monospace;
+  --r: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0c1120; --surface: #141b2e; --ink: #e6eaf5; --muted: #98a2be; --line: #263051;
+    --accent: #8197ff; --accent-ink: #0c1120; --accent-soft: #1d2650; --warm: #f0a052; --warm-soft: #3a2a1a;
+    --good: #4cc38a; --bad: #f06b62; --grid: rgba(129, 151, 255, 0.05); color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0c1120; --surface: #141b2e; --ink: #e6eaf5; --muted: #98a2be; --line: #263051;
+  --accent: #8197ff; --accent-ink: #0c1120; --accent-soft: #1d2650; --warm: #f0a052; --warm-soft: #3a2a1a;
+  --good: #4cc38a; --bad: #f06b62; --grid: rgba(129, 151, 255, 0.05); color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 16px; line-height: 1.55;
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+body.staged { overflow: hidden; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--surface); }
+h1, h2, h3 { font-family: var(--f-display); line-height: 1.15; text-wrap: balance; margin: 0; }
+h2 { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.01em; }
+h3 { font-size: 1.12rem; font-weight: 600; }
+p { margin: 0; }
+a { color: var(--accent); }
+button { font: inherit; color: inherit; cursor: pointer; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+kbd { font-family: var(--f-mono); font-size: 0.72em; border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; opacity: 0.7; }
+.mono, .num { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.eyebrow { font-family: var(--f-mono); font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.muted { color: var(--muted); }
+
+.wrap { max-width: 880px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+/* Header + tabs */
+.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line); }
+.top .wrap { display: flex; align-items: center; gap: 12px; padding-block: 10px 0; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 10px; font-family: var(--f-display); font-weight: 800; font-size: 1.2rem; letter-spacing: -0.02em; }
+.brand svg { width: 28px; height: 28px; }
+.chips { margin-left: auto; display: flex; gap: 8px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 99px; font-family: var(--f-mono); font-size: 0.8rem; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
+.chip.warm { background: var(--warm-soft); color: var(--warm); }
+.tabs { display: flex; gap: 2px; width: 100%; overflow-x: auto; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.tab { border: 0; background: none; padding: 10px 12px 11px; color: var(--muted); font-weight: 700; font-size: 0.95rem; border-bottom: 3px solid transparent; white-space: nowrap; }
+.tab[aria-current="page"] { color: var(--ink); border-bottom-color: var(--accent); }
+
+main .wrap { padding-block: 24px 64px; display: flex; flex-direction: column; gap: 22px; }
+.view { display: flex; flex-direction: column; gap: 22px; }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 18px; }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 10px 16px; font-weight: 700; transition: transform .08s, background .15s; touch-action: manipulation; }
+.btn:active { transform: scale(0.97); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn.ghost { background: transparent; }
+.btn.danger { color: var(--bad); }
+.btn:disabled { opacity: 0.5; cursor: default; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+/* Today */
+.hero { display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: end; }
+.hero .lead { color: var(--muted); max-width: 60ch; margin-top: 6px; }
+.ring { width: 92px; height: 92px; position: relative; }
+.ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.ring .lbl { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--f-mono); font-weight: 600; font-size: 1.05rem; }
+.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.step { display: grid; grid-template-columns: 40px 1fr auto; gap: 14px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px; text-align: left; width: 100%; }
+.step .idx { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-family: var(--f-mono); font-weight: 600; border: 2px solid var(--line); color: var(--muted); }
+.step.done .idx { background: var(--good); border-color: var(--good); color: var(--surface); }
+.step.next { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.step.next .idx { border-color: var(--accent); color: var(--accent); }
+.step .meta { font-size: 0.85rem; color: var(--muted); }
+.step .t { font-weight: 700; }
+.step .right { text-align: right; font-family: var(--f-mono); font-size: 0.82rem; color: var(--muted); white-space: nowrap; }
+.step .right b { display: block; color: var(--ink); font-size: 1rem; }
+.pill { display: inline-block; font-family: var(--f-mono); font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; padding: 1px 7px; border-radius: 99px; }
+.pill.done { background: color-mix(in srgb, var(--good) 16%, transparent); color: var(--good); }
+.pill.next { background: var(--accent-soft); color: var(--accent); }
+.habits { display: flex; flex-direction: column; }
+.habit { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: start; padding: 12px 0; border-top: 1px solid var(--line); }
+.habit:first-of-type { border-top: 0; }
+.habit input { width: 22px; height: 22px; margin-top: 2px; accent-color: var(--good); }
+.habit label { font-weight: 700; cursor: pointer; }
+.habit .why { font-size: 0.86rem; color: var(--muted); }
+.note { font-size: 0.9rem; color: var(--muted); border-left: 3px solid var(--line); padding-left: 12px; max-width: 70ch; }
+
+/* Train */
+.grid2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
+.drill { display: flex; flex-direction: column; gap: 10px; }
+.drill .top-row { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.drill p { font-size: 0.92rem; color: var(--muted); flex: 1; }
+.lvl { font-family: var(--f-mono); font-weight: 600; color: var(--accent); white-space: nowrap; }
+
+/* Progress */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+.stat .v { font-family: var(--f-display); font-weight: 800; font-size: 2rem; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.heat-wrap { overflow-x: auto; }
+.heat { display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, 14px); gap: 4px; width: max-content; }
+.heat i { width: 14px; height: 14px; border-radius: 3px; background: var(--line); }
+.heat i.f { background: var(--accent); }
+.heat i.today { outline: 2px solid var(--warm); outline-offset: 1px; }
+.legend { display: flex; gap: 6px; align-items: center; font-size: 0.78rem; color: var(--muted); margin-top: 8px; }
+.legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.chart canvas { width: 100%; height: 130px; display: block; }
+.chart .head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+textarea, input[type="text"] { width: 100%; font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+textarea { font-family: var(--f-mono); font-size: 0.8rem; min-height: 110px; }
+
+/* Cards */
+.cardlist { display: flex; flex-direction: column; }
+.cl-item { display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 12px 0; border-top: 1px solid var(--line); align-items: start; }
+.cl-item .f { font-weight: 700; }
+.cl-item .b { font-size: 0.9rem; color: var(--muted); }
+.cl-item .m { font-family: var(--f-mono); font-size: 0.75rem; color: var(--muted); }
+.tag { font-family: var(--f-mono); font-size: 0.68rem; background: var(--warm-soft); color: var(--warm); padding: 0 6px; border-radius: 4px; margin-left: 6px; vertical-align: 2px; }
+.form { display: grid; gap: 10px; }
+
+/* Science */
+.prose { max-width: 68ch; display: flex; flex-direction: column; gap: 12px; }
+.prose h3 { margin-top: 10px; }
+.verdict { display: grid; gap: 10px; }
+.verdict div { display: grid; grid-template-columns: 110px 1fr; gap: 12px; align-items: start; }
+.verdict .pill { justify-self: start; margin-top: 3px; }
+.pill.strong { background: color-mix(in srgb, var(--good) 16%, transparent); color: var(--good); }
+.pill.mixed { background: var(--warm-soft); color: var(--warm); }
+.refs { font-size: 0.86rem; color: var(--muted); padding-left: 20px; display: flex; flex-direction: column; gap: 6px; margin: 0; }
+.refs a { word-break: break-word; }
+
+/* Stage */
+#stage { position: fixed; inset: 0; z-index: 20; background: var(--bg); display: flex; flex-direction: column; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); overflow-y: auto; }
+.stage-top { display: flex; align-items: center; gap: 12px; padding-block: 12px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); border-bottom: 1px solid var(--line); background: var(--surface); }
+#stageTitle { font-family: var(--f-display); font-weight: 800; font-size: 1.1rem; }
+#stageMeta { margin-left: auto; font-family: var(--f-mono); font-size: 0.85rem; color: var(--muted); }
+#stageBody { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding-block: 20px 28px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); gap: 18px; }
+.intro { max-width: 560px; width: 100%; display: flex; flex-direction: column; gap: 14px; }
+.intro ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+.check { display: flex; gap: 10px; align-items: flex-start; font-size: 0.92rem; color: var(--muted); }
+.check input { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--accent); }
+
+.nb { display: flex; flex-direction: column; align-items: center; gap: 18px; width: 100%; }
+.nb-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; width: min(320px, 80vw); aspect-ratio: 1; max-width: 100%; }
+.nb-cell { border-radius: 10px; background: var(--surface); border: 1px solid var(--line); transition: background .08s; }
+.nb-cell.on { background: var(--accent); border-color: var(--accent); }
+.nb-letter { font-family: var(--f-display); font-weight: 800; font-size: 2.6rem; height: 3.2rem; min-width: 3rem; text-align: center; }
+.nb-btns, .sw-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: min(420px, 100%); }
+.btn.big { padding: 18px 10px; font-size: 1.05rem; }
+.btn.ok { background: var(--good); color: var(--surface); border-color: var(--good); }
+.btn.no { background: var(--bad); color: var(--surface); border-color: var(--bad); }
+
+.sw-card { width: min(300px, 80vw); aspect-ratio: 1.2; max-width: 100%; border-radius: 18px; border: 4px solid var(--line); background: var(--surface); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; transition: border-color .1s; }
+.sw-card.par { border-color: var(--accent); }
+.sw-card.mag { border-color: var(--warm); }
+.sw-cue { font-family: var(--f-mono); font-size: 0.85rem; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600; }
+.sw-card.par .sw-cue { color: var(--accent); }
+.sw-card.mag .sw-cue { color: var(--warm); }
+.sw-digit { font-family: var(--f-display); font-weight: 800; font-size: 4.6rem; line-height: 1; }
+.sw-card.ok { box-shadow: 0 0 0 6px color-mix(in srgb, var(--good) 35%, transparent); }
+.sw-card.no { box-shadow: 0 0 0 6px color-mix(in srgb, var(--bad) 35%, transparent); }
+.bar { width: min(300px, 80vw); height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+.bar i { display: block; height: 100%; width: 100%; background: var(--accent); }
+
+.mx-q { font-family: var(--f-display); font-weight: 800; font-size: clamp(2.2rem, 9vw, 3.4rem); font-variant-numeric: tabular-nums; }
+.mx-a { font-family: var(--f-mono); font-size: 2rem; min-height: 3rem; min-width: 6ch; text-align: center; border-bottom: 3px solid var(--accent); }
+.mx-a.no { border-color: var(--bad); color: var(--bad); }
+.pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; width: min(320px, 100%); }
+.pad button { padding: 14px 0; font-size: 1.3rem; font-family: var(--f-mono); }
+
+.board { position: relative; width: min(340px, 86vw); aspect-ratio: 1; max-width: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; }
+.blk { position: absolute; width: 19%; height: 19%; border-radius: 10px; background: var(--accent-soft); border: 2px solid var(--line); padding: 0; transition: background .08s; }
+.blk.on { background: var(--warm); border-color: var(--warm); }
+.blk.hit { background: var(--accent); border-color: var(--accent); }
+.board.locked .blk { cursor: default; }
+.sp-msg { font-family: var(--f-display); font-weight: 600; font-size: 1.2rem; min-height: 1.6rem; }
+
+.sr-terms { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; font-family: var(--f-mono); font-size: clamp(1.3rem, 5vw, 1.9rem); font-weight: 600; }
+.sr-terms span { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 6px 12px; }
+.sr-terms span.q { border-style: dashed; color: var(--accent); border-color: var(--accent); }
+.opts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: min(420px, 100%); }
+.opts button { font-family: var(--f-mono); font-size: 1.3rem; padding: 16px 0; }
+
+.fc { width: min(520px, 100%); min-height: 220px; background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 24px; display: flex; flex-direction: column; justify-content: center; gap: 14px; text-align: center; }
+.fc .front { font-family: var(--f-display); font-weight: 600; font-size: 1.4rem; }
+.fc .back { color: var(--muted); border-top: 1px dashed var(--line); padding-top: 14px; }
+
+.breath { width: 220px; height: 220px; max-width: 70vw; max-height: 70vw; border-radius: 50%; background: radial-gradient(circle, var(--accent-soft), transparent 70%); display: grid; place-items: center; }
+.breath i { display: block; width: 40%; height: 40%; border-radius: 50%; background: var(--accent); opacity: 0.85; transform: scale(1); transition: transform 4s ease-in-out; }
+.breath-t { font-family: var(--f-mono); font-size: 1.6rem; }
+
+.res { max-width: 520px; width: 100%; display: flex; flex-direction: column; gap: 16px; }
+.res-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+.res-stats div { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+.res-stats b { display: block; font-family: var(--f-display); font-size: 1.6rem; font-variant-numeric: tabular-nums; }
+.lvl-msg { padding: 12px 14px; border-radius: 12px; font-weight: 700; }
+.lvl-msg.up { background: color-mix(in srgb, var(--good) 15%, transparent); color: var(--good); }
+.lvl-msg.down { background: var(--warm-soft); color: var(--warm); }
+.lvl-msg.same { background: var(--accent-soft); color: var(--accent); }
+
+@media (max-width: 520px) {
+  .hero { grid-template-columns: 1fr; }
+  .ring { width: 76px; height: 76px; }
+  .verdict div { grid-template-columns: 1fr; gap: 4px; }
+  h2 { font-size: 1.4rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+</style>
+
+<header class="top">
+  <div class="wrap">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="8" cy="9" r="4" fill="var(--accent)"/><circle cx="24" cy="9" r="4" fill="var(--warm)"/><circle cx="16" cy="24" r="4" fill="var(--accent)"/><path d="M8 9 L16 24 L24 9" stroke="var(--ink)" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+      Synapse Routine
+    </div>
+    <div class="chips">
+      <span class="chip warm" id="chipStreak" title="Days in a row with the full routine done">0-day streak</span>
+      <span class="chip" id="chipToday">0/5 today</span>
+    </div>
+    <nav class="tabs" aria-label="Sections">
+      <button class="tab" data-view="today">Today</button>
+      <button class="tab" data-view="train">Drills</button>
+      <button class="tab" data-view="progress">Progress</button>
+      <button class="tab" data-view="cards">Cards</button>
+      <button class="tab" data-view="science">Science</button>
+    </nav>
+  </div>
+</header>
+
+<main><div class="wrap">
+  <section class="view" id="v-today"></section>
+  <section class="view" id="v-train" hidden></section>
+  <section class="view" id="v-progress" hidden></section>
+  <section class="view" id="v-cards" hidden></section>
+  <section class="view" id="v-science" hidden></section>
+</div></main>
+
+<div id="stage" hidden role="dialog" aria-modal="true" aria-labelledby="stageTitle">
+  <div class="stage-top">
+    <button class="btn ghost" id="stageClose">Quit</button>
+    <div id="stageTitle"></div>
+    <div id="stageMeta"></div>
+  </div>
+  <div id="stageBody"></div>
+</div>
+
+<script>
+(function () {
+"use strict";
+/* ---------- helpers ---------- */
+const $ = (s, r) => (r || document).querySelector(s);
+const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
+const rand = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+const shuffle = arr => { const a = arr.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const pct = x => Math.round(x * 100) + "%";
+const mean = a => a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0;
+function iso(dt) { return dt.getFullYear() + "-" + String(dt.getMonth() + 1).padStart(2, "0") + "-" + String(dt.getDate()).padStart(2, "0"); }
+function today() { return iso(new Date()); }
+function addDays(s, k) { const [y, m, d] = s.split("-").map(Number); return iso(new Date(y, m - 1, d + k)); }
+function dayNum(s) { const [y, m, d] = s.split("-").map(Number); return Math.floor(Date.UTC(y, m - 1, d) / 864e5); }
+
+/* ---------- content ---------- */
+const DRILLS = {
+  nback:  { name: "Dual N-Back",    skill: "Working memory",       mins: 8, unit: "N",      desc: "Track grid positions and letters at the same time. Respond when either matches the one N steps back. Difficulty adapts every round." },
+  "switch": { name: "Rule Switch",  skill: "Cognitive flexibility", mins: 2, unit: "level",  desc: "Sort digits as odd/even or low/high depending on the colour cue. The rule changes without warning, and the time limit tightens as you improve." },
+  math:   { name: "Number Sprint",  skill: "Processing speed",     mins: 1, unit: "level",  desc: "60 seconds of mental arithmetic. Problems move from single digits to two-digit multiplication as you get faster." },
+  span:   { name: "Block Span",     skill: "Visuospatial memory",  mins: 3, unit: "blocks", desc: "Watch blocks light up, then tap them back in the same order. Based on the Corsi block-tapping test." },
+  series: { name: "Pattern Series", skill: "Fluid reasoning",      mins: 4, unit: "level",  desc: "Find the rule behind a number sequence and pick the next term. Rules get more abstract with each level." }
+};
+const ROTATION = [["span", "series"], ["switch", "math"], ["series", "switch"], ["math", "span"]];
+const HABITS = [
+  { id: "move",  label: "Aerobic exercise, 20+ minutes", why: "Fitness training improves executive function and was shown to enlarge the hippocampus (Hillman 2008; Erickson 2011)." },
+  { id: "sleep", label: "Slept 7 to 9 hours", why: "Sleep loss reliably cuts attention and working memory, and sleep consolidates what you learned (Lim & Dinges 2010)." },
+  { id: "read",  label: "Read 20+ minutes of something challenging", why: "Knowledge and vocabulary are a large part of measured intelligence. Each year of education adds about 1 to 5 IQ points (Ritchie & Tucker-Drob 2018)." },
+  { id: "focus", label: "Mindfulness, 10 minutes", why: "Two weeks of mindfulness raised working memory and GRE reading scores (Mrazek 2013).", timer: true },
+  { id: "learn", label: "Practised a hard new skill", why: "Learning demanding new skills improved memory more than easy activities (Park 2014). Languages, an instrument, coding, chess all count." }
+];
+const IV = [0, 1, 2, 4, 7, 15, 30, 60];
+function seedCards() {
+  const t = today();
+  return [
+    ["Retrieval practice", "Recalling information from memory strengthens it far more than rereading (Roediger & Karpicke, 2006)."],
+    ["Spacing effect", "Reviews spread over days beat the same time crammed into one session (Cepeda et al., 2006)."],
+    ["Base rate neglect", "Judging a probability from specific evidence while ignoring how common the thing is overall."],
+    ["Bayes' rule in words", "Shift your belief by how much more likely the evidence is if the idea is true than if it is false."],
+    ["Regression to the mean", "An extreme result tends to be followed by a more average one, with no cause needed."],
+    ["Survivorship bias", "Drawing conclusions only from the winners that remain visible, ignoring the failures that dropped out."],
+    ["Sunk cost fallacy", "Continuing something because of what you already spent, not because of its future value."],
+    ["Confirmation bias", "Searching for and remembering evidence that supports what you already believe."],
+    ["Opportunity cost", "The value of the best alternative you give up when you make a choice."],
+    ["Correlation vs causation", "Two things moving together can be caused by a third factor, chance, or reversed direction."],
+    ["Second-order thinking", "Asking 'and then what?' to see the consequences of the consequences."],
+    ["Expected value", "Each outcome's value times its probability, summed. Use it to compare risky options."]
+  ].map((c, i) => ({ id: "ex" + i, front: c[0], back: c[1], box: 0, due: t, example: true }));
+}
+
+/* ---------- state ---------- */
+const KEY = "synapse-routine-v1";
+function fresh() { return { v: 1, levels: { nback: 2, "switch": 1, math: 1, span: 4, series: 1 }, history: [], days: {}, cards: seedCards() }; }
+function load() {
+  try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.v === 1) return Object.assign(fresh(), s); } catch (e) {}
+  return fresh();
+}
+let S = load();
+function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
+function dayRec(d) { if (!S.days[d]) S.days[d] = { done: {}, habits: {} }; return S.days[d]; }
+function planFor(d) { return ["nback"].concat(ROTATION[dayNum(d) % ROTATION.length], ["review"]); }
+function stepName(id) { return id === "review" ? "Card Review" : DRILLS[id].name; }
+function dayFrac(d) { const r = S.days[d]; if (!r) return 0; const p = planFor(d); return p.filter(id => r.done[id]).length / p.length; }
+function dayComplete(d) { return dayFrac(d) >= 1; }
+function streak() { let d = today(), c = 0; if (!dayComplete(d)) d = addDays(d, -1); while (dayComplete(d)) { c++; d = addDays(d, -1); } return c; }
+function dueCards() { const t = today(); return S.cards.filter(c => c.due <= t); }
+function finish(id, entry) {
+  S.history.push(Object.assign({ d: today(), t: id }, entry));
+  dayRec(today()).done[id] = true;
+  save(); renderAll();
+}
+
+/* ---------- navigation ---------- */
+const VIEWS = ["today", "train", "progress", "cards", "science"];
+function show(v) {
+  if (!VIEWS.includes(v)) v = "today";
+  VIEWS.forEach(x => { $("#v-" + x).hidden = x !== v; });
+  $$(".tab").forEach(b => b.setAttribute("aria-current", b.dataset.view === v ? "page" : "false"));
+  if (v === "progress") drawCharts();
+}
+$$(".tab").forEach(b => b.addEventListener("click", () => { if (location.hash !== "#" + b.dataset.view) location.hash = b.dataset.view; else show(b.dataset.view); }));
+window.addEventListener("hashchange", () => show(location.hash.slice(1)));
+
+/* ---------- render: header + today ---------- */
+function renderHeader() {
+  const s = streak(), p = planFor(today()), r = dayRec(today());
+  $("#chipStreak").textContent = s + "-day streak";
+  $("#chipToday").textContent = p.filter(id => r.done[id]).length + "/" + p.length + " today";
+}
+function levelText(id) { if (id === "review") { const n = dueCards().length; return n + " due"; } const d = DRILLS[id]; return (d.unit === "N" ? "N=" : d.unit === "blocks" ? "" : "Lv ") + S.levels[id] + (d.unit === "blocks" ? " blocks" : ""); }
+function renderToday() {
+  const d = today(), plan = planFor(d), r = dayRec(d);
+  const next = plan.find(id => !r.done[id]);
+  const doneN = plan.filter(id => r.done[id]).length;
+  const mins = plan.reduce((s, id) => s + (id === "review" ? 4 : DRILLS[id].mins), 0);
+  const C = 2 * Math.PI * 40, frac = doneN / plan.length;
+  const dateLabel = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+  const steps = plan.map((id, i) => {
+    const done = !!r.done[id], isNext = id === next;
+    const skill = id === "review" ? "Long-term memory · spaced repetition" : DRILLS[id].skill;
+    const mm = id === "review" ? 4 : DRILLS[id].mins;
+    return `<li><button class="step ${done ? "done" : ""} ${isNext ? "next" : ""}" data-step="${id}">
+      <span class="idx">${done ? "✓" : i + 1}</span>
+      <span><span class="t">${stepName(id)}</span> ${done ? '<span class="pill done">Done</span>' : isNext ? '<span class="pill next">Up next</span>' : ""}<br><span class="meta">${skill} · ~${mm} min</span></span>
+      <span class="right"><b>${levelText(id)}</b>${done ? "again" : "start"}</span>
+    </button></li>`;
+  }).join("");
+  const hr = r.habits || {};
+  const habits = HABITS.map(h => `<div class="habit">
+      <input type="checkbox" id="h-${h.id}" data-habit="${h.id}" ${hr[h.id] ? "checked" : ""}>
+      <div><label for="h-${h.id}">${h.label}</label><div class="why">${h.why}</div></div>
+      ${h.timer ? '<button class="btn" data-breath="1">Timer</button>' : "<span></span>"}
+    </div>`).join("");
+  $("#v-today").innerHTML = `
+    <div class="hero">
+      <div>
+        <div class="eyebrow">${esc(dateLabel)}</div>
+        <h2>${next ? (doneN ? "Keep going. " + (plan.length - doneN) + " step" + (plan.length - doneN > 1 ? "s" : "") + " left." : "Today's session, about " + mins + " minutes") : "Routine complete. See you tomorrow."}</h2>
+        <p class="lead">The core is dual n-back every day. Two other drills rotate daily so you train a range of skills, then you review cards with spaced repetition. Do it at about the same time each day.</p>
+      </div>
+      <div class="ring" aria-label="${doneN} of ${plan.length} steps done">
+        <svg viewBox="0 0 92 92"><circle cx="46" cy="46" r="40" stroke="var(--line)" stroke-width="8" fill="none"/><circle cx="46" cy="46" r="40" stroke="var(--good)" stroke-width="8" fill="none" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - frac)}"/></svg>
+        <span class="lbl">${doneN}/${plan.length}</span>
+      </div>
+    </div>
+    <div class="row">${next ? `<button class="btn primary big" id="startNext" style="padding:14px 22px">Start ${stepName(next)}</button>` : ""}<span class="muted" style="font-size:.9rem">Tip: use headphones for n-back, and do the drills before checking your phone for the day.</span></div>
+    <ol class="steps" aria-label="Today's routine">${steps}</ol>
+    <div class="card">
+      <div class="eyebrow">Daily habits</div>
+      <h3 style="margin:4px 0 6px">These move intelligence more than any drill</h3>
+      <div class="habits">${habits}</div>
+    </div>
+    <p class="note">Why this design: drills mostly improve the skills they train. The research on lasting gains in reasoning and knowledge points to learning, reading, sleep, exercise and attention practice, so the routine combines both. See the Science tab for the evidence.</p>`;
+  const sn = $("#startNext"); if (sn) sn.onclick = () => startStep(next);
+  $$("[data-step]", $("#v-today")).forEach(b => b.onclick = () => startStep(b.dataset.step));
+  $$("[data-habit]", $("#v-today")).forEach(c => c.onchange = () => { dayRec(today()).habits[c.dataset.habit] = c.checked; save(); });
+  $$("[data-breath]", $("#v-today")).forEach(b => b.onclick = runBreath);
+}
+function startStep(id) { if (id === "review") runReview(); else RUN[id](); }
+
+/* ---------- render: train ---------- */
+function renderTrain() {
+  $("#v-train").innerHTML = `<div><div class="eyebrow">Free practice</div><h2>Drills</h2><p class="muted" style="margin-top:6px;max-width:62ch">Each drill adapts to you: it gets harder when you do well and eases off when you struggle, so you stay at the edge of your ability. Extra practice here also counts toward today.</p></div>
+  <div class="grid2">${Object.keys(DRILLS).map(id => { const d = DRILLS[id]; return `<div class="card drill">
+    <div class="top-row"><h3>${d.name}</h3><span class="lvl">${levelText(id)}</span></div>
+    <div class="eyebrow">${d.skill} · ~${d.mins} min</div>
+    <p>${d.desc}</p>
+    <button class="btn primary" data-run="${id}">Play</button></div>`; }).join("")}
+    <div class="card drill"><div class="top-row"><h3>Card Review</h3><span class="lvl">${dueCards().length} due</span></div><div class="eyebrow">Long-term memory · ~4 min</div><p>Spaced-repetition flashcards. Add cards for what you are learning in the Cards tab.</p><button class="btn primary" data-run="review">Review</button></div>
+    <div class="card drill"><div class="top-row"><h3>Breathing focus</h3><span class="lvl">5 or 10 min</span></div><div class="eyebrow">Attention</div><p>A paced-breathing timer for your mindfulness habit. Bring attention back to the breath each time it wanders.</p><button class="btn primary" data-breath="1">Begin</button></div>
+  </div>`;
+  $$("[data-run]", $("#v-train")).forEach(b => b.onclick = () => startStep(b.dataset.run));
+  $$("[data-breath]", $("#v-train")).forEach(b => b.onclick = runBreath);
+}
+
+/* ---------- render: progress ---------- */
+function renderProgress() {
+  const days = Object.keys(S.days).filter(d => dayFrac(d) > 0).length;
+  const sessions = S.history.length;
+  let best = 0, run = 0; const keys = Object.keys(S.days).sort();
+  if (keys.length) { for (let d = keys[0]; d <= today(); d = addDays(d, 1)) { if (dayComplete(d)) { run++; best = Math.max(best, run); } else run = 0; } }
+  const end = today();
+  let cells = "";
+  const first = addDays(end, -(((new Date().getDay() + 6) % 7) + 77)); /* Monday, 11 weeks before this week */
+  for (let d = first; d <= end; d = addDays(d, 1)) {
+    const f = dayFrac(d);
+    const style = f > 0 ? ` style="background:color-mix(in srgb, var(--accent) ${Math.round(25 + 75 * f)}%, var(--line))"` : "";
+    cells += `<i title="${d}: ${Math.round(f * 100)}% of routine"${style} class="${d === end ? "today" : ""}"></i>`;
+  }
+  $("#v-progress").innerHTML = `<div><div class="eyebrow">Your record</div><h2>Progress</h2></div>
+  <div class="stats">
+    <div class="card stat"><div class="eyebrow">Current streak</div><div class="v">${streak()}</div><div class="muted">days</div></div>
+    <div class="card stat"><div class="eyebrow">Best streak</div><div class="v">${best}</div><div class="muted">days</div></div>
+    <div class="card stat"><div class="eyebrow">Days trained</div><div class="v">${days}</div><div class="muted">at least one step</div></div>
+    <div class="card stat"><div class="eyebrow">Sessions</div><div class="v">${sessions}</div><div class="muted">drills and reviews</div></div>
+  </div>
+  <div class="card"><div class="eyebrow">Consistency, last 12 weeks</div><div class="heat-wrap" style="margin-top:10px"><div class="heat">${cells}</div></div>
+    <div class="legend">Less <i style="background:var(--line)"></i><i style="background:color-mix(in srgb, var(--accent) 45%, var(--line))"></i><i style="background:color-mix(in srgb, var(--accent) 75%, var(--line))"></i><i style="background:var(--accent)"></i> Full routine</div></div>
+  <div class="grid2">${Object.keys(DRILLS).map(id => { const h = S.history.filter(x => x.t === id); const top = h.length ? Math.max.apply(null, h.map(x => x.lvl)) : "–"; return `<div class="card chart"><div class="head"><h3>${DRILLS[id].name}</h3><span class="muted mono" style="font-size:.8rem">now ${levelText(id)} · best ${top}</span></div>${h.length ? `<canvas data-chart="${id}" aria-label="${DRILLS[id].name} level per session"></canvas><div class="muted" style="font-size:.8rem;margin-top:6px">${DRILLS[id].unit === "blocks" ? "Longest sequence" : DRILLS[id].unit === "N" ? "N level" : "Level"} per session · last ${Math.min(h.length, 40)} sessions</div>` : `<p class="muted" style="font-size:.9rem">No sessions yet. Play it once and your level curve shows up here.</p>`}</div>`; }).join("")}</div>
+  <div class="card"><div class="eyebrow">Your data</div><h3 style="margin:4px 0 6px">Back up or move to another device</h3>
+    <p class="muted" style="font-size:.9rem;margin-bottom:10px">Everything is stored only in this browser. To move between PC and phone, copy the backup here and paste it into Import on the other device.</p>
+    <textarea id="dataBox" aria-label="Backup data" placeholder="Press Show backup, or paste a backup here to import"></textarea>
+    <div class="row" style="margin-top:10px"><button class="btn" id="exp">Show backup</button><button class="btn" id="copy">Copy</button><button class="btn" id="imp">Import pasted backup</button><button class="btn danger" id="reset">Reset all data</button><span id="dataMsg" class="muted" style="font-size:.9rem"></span></div>
+  </div>`;
+  const box = $("#dataBox"), msg = $("#dataMsg");
+  $("#exp").onclick = () => { box.value = JSON.stringify(S); msg.textContent = "Backup shown above."; };
+  $("#copy").onclick = () => { if (!box.value) box.value = JSON.stringify(S); const done = () => { msg.textContent = "Copied."; }; try { navigator.clipboard.writeText(box.value).then(done, () => { box.select(); msg.textContent = "Selected. Copy it with your keyboard or long-press."; }); } catch (e) { box.select(); msg.textContent = "Selected. Copy it manually."; } };
+  $("#imp").onclick = () => { try { const n = JSON.parse(box.value); if (!n || n.v !== 1 || !n.levels) throw 0; S = Object.assign(fresh(), n); save(); renderAll(); $("#dataMsg").textContent = "Imported."; } catch (e) { msg.textContent = "That text is not a Synapse Routine backup. Paste the full text from Show backup."; } };
+  let armed = false;
+  $("#reset").onclick = e => { if (!armed) { armed = true; e.target.textContent = "Tap again to erase everything"; setTimeout(() => { armed = false; if (e.target.isConnected) e.target.textContent = "Reset all data"; }, 4000); return; } S = fresh(); save(); renderAll(); };
+  if (!$("#v-progress").hidden) drawCharts();
+}
+function drawCharts() {
+  const cs = getComputedStyle(document.documentElement);
+  const accent = cs.getPropertyValue("--accent").trim(), line = cs.getPropertyValue("--line").trim(), muted = cs.getPropertyValue("--muted").trim(), warm = cs.getPropertyValue("--warm").trim();
+  $$("canvas[data-chart]").forEach(cv => {
+    const id = cv.dataset.chart, h = S.history.filter(x => x.t === id).slice(-40);
+    const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+    if (!W) return;
+    cv.width = W * dpr; cv.height = H * dpr;
+    const g = cv.getContext("2d"); g.scale(dpr, dpr); g.clearRect(0, 0, W, H);
+    const vals = h.map(x => x.lvl), lo = Math.max(0, Math.min.apply(null, vals) - 1), hi = Math.max.apply(null, vals) + 1;
+    const pl = 26, pr = 10, pt = 8, pb = 8;
+    const X = i => pl + (h.length === 1 ? (W - pl - pr) / 2 : i * (W - pl - pr) / (h.length - 1));
+    const Y = v => pt + (hi - v) * (H - pt - pb) / (hi - lo);
+    g.font = "11px " + cs.getPropertyValue("--f-mono"); g.fillStyle = muted; g.strokeStyle = line; g.lineWidth = 1; g.textBaseline = "middle"; g.textAlign = "right";
+    const stepV = Math.max(1, Math.ceil((hi - lo) / 4));
+    for (let v = Math.ceil(lo); v <= hi; v += stepV) { g.beginPath(); g.moveTo(pl, Y(v)); g.lineTo(W - pr, Y(v)); g.stroke(); g.fillText(v, pl - 6, Y(v)); }
+    g.beginPath(); vals.forEach((v, i) => i ? g.lineTo(X(i), Y(v)) : g.moveTo(X(i), Y(v)));
+    g.lineTo(X(vals.length - 1), H - pb); g.lineTo(X(0), H - pb); g.closePath(); g.globalAlpha = 0.14; g.fillStyle = accent; g.fill(); g.globalAlpha = 1;
+    g.beginPath(); vals.forEach((v, i) => i ? g.lineTo(X(i), Y(v)) : g.moveTo(X(i), Y(v))); g.strokeStyle = accent; g.lineWidth = 2.5; g.lineJoin = "round"; g.stroke();
+    const li = vals.length - 1; g.beginPath(); g.arc(X(li), Y(vals[li]), 4.5, 0, 7); g.fillStyle = warm; g.fill();
+  });
+}
+window.addEventListener("resize", () => { if (!$("#v-progress").hidden) drawCharts(); });
+try { matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { if (!$("#v-progress").hidden) drawCharts(); }); } catch (e) {}
+
+/* ---------- render: cards ---------- */
+function renderCards() {
+  const t = today(), list = S.cards.slice().sort((a, b) => a.due < b.due ? -1 : a.due > b.due ? 1 : 0);
+  const hasEx = S.cards.some(c => c.example);
+  $("#v-cards").innerHTML = `<div><div class="eyebrow">Spaced repetition</div><h2>Cards</h2><p class="muted" style="margin-top:6px;max-width:62ch">Add facts, words, formulas or ideas from whatever you are studying. Each card you recall correctly comes back after a longer gap: 1, 2, 4, 7, 15, 30, then 60 days. Cards you miss start over. The starter deck holds thinking tools from decision science.</p></div>
+  <form class="card form" id="addForm"><div class="eyebrow">New card</div>
+    <input type="text" id="cFront" placeholder="Front: question or term" required maxlength="200" aria-label="Card front">
+    <textarea id="cBack" placeholder="Back: answer or explanation" required maxlength="600" style="min-height:70px;font-family:var(--f-body);font-size:1rem" aria-label="Card back"></textarea>
+    <div class="row"><button class="btn primary" type="submit">Add card</button><span class="muted" style="font-size:.9rem">${S.cards.length} cards · ${dueCards().length} due today</span></div>
+  </form>
+  <div class="card"><div class="row" style="justify-content:space-between"><div class="eyebrow">Deck</div>${hasEx ? '<button class="btn ghost" id="rmEx">Remove starter cards</button>' : ""}</div>
+    <div class="cardlist">${list.length ? list.map(c => `<div class="cl-item"><div><div class="f">${esc(c.front)}${c.example ? '<span class="tag">starter</span>' : ""}</div><div class="b">${esc(c.back)}</div><div class="m">${c.due <= t ? "due today" : "next " + c.due} · box ${c.box}</div></div><button class="btn ghost danger" data-del="${esc(c.id)}" aria-label="Delete card">Delete</button></div>`).join("") : '<p class="muted" style="padding-top:10px">No cards yet. Add your first one above.</p>'}</div></div>`;
+  $("#addForm").onsubmit = e => { e.preventDefault(); const f = $("#cFront").value.trim(), b = $("#cBack").value.trim(); if (!f || !b) return; S.cards.push({ id: "c" + Date.now().toString(36) + rand(0, 999), front: f, back: b, box: 0, due: today() }); save(); renderAll(); setTimeout(() => { const el = $("#cFront"); if (el) el.focus(); }, 0); };
+  $$("[data-del]", $("#v-cards")).forEach(b => b.onclick = () => { S.cards = S.cards.filter(c => c.id !== b.dataset.del); save(); renderAll(); });
+  const rm = $("#rmEx"); if (rm) rm.onclick = () => { S.cards = S.cards.filter(c => !c.example); save(); renderAll(); };
+}
+
+/* ---------- render: science ---------- */
+function renderScience() {
+  const R = [
+    ["Jaeggi, Buschkuehl, Jonides & Perrig (2008). Improving fluid intelligence with training on working memory. PNAS 105(19).", "10.1073/pnas.0801268105"],
+    ["Au, Sheehan, Tsai, Duncan, Buschkuehl & Jaeggi (2015). Improving fluid intelligence with training on working memory: a meta-analysis. Psychonomic Bulletin & Review 22(2).", "10.3758/s13423-014-0699-x"],
+    ["Melby-Lervåg, Redick & Hulme (2016). Working memory training does not improve performance on measures of intelligence or other measures of far transfer. Perspectives on Psychological Science 11(4).", "10.1177/1745691616635612"],
+    ["Simons et al. (2016). Do “brain-training” programs work? Psychological Science in the Public Interest 17(3).", "10.1177/1529100616661983"],
+    ["Ritchie & Tucker-Drob (2018). How much does education improve intelligence? A meta-analysis. Psychological Science 29(8).", "10.1177/0956797618774253"],
+    ["Roediger & Karpicke (2006). Test-enhanced learning. Psychological Science 17(3).", "10.1111/j.1467-9280.2006.01693.x"],
+    ["Cepeda, Pashler, Vul, Wixted & Rohrer (2006). Distributed practice in verbal recall tasks. Psychological Bulletin 132(3).", "10.1037/0033-2909.132.3.354"],
+    ["Dunlosky et al. (2013). Improving students' learning with effective learning techniques. Psychological Science in the Public Interest 14(1).", "10.1177/1529100612453266"],
+    ["Hillman, Erickson & Kramer (2008). Be smart, exercise your heart: exercise effects on brain and cognition. Nature Reviews Neuroscience 9(1).", "10.1038/nrn2298"],
+    ["Erickson et al. (2011). Exercise training increases size of hippocampus and improves memory. PNAS 108(7).", "10.1073/pnas.1015950108"],
+    ["Mrazek, Franklin, Phillips, Baird & Schooler (2013). Mindfulness training improves working memory capacity and GRE performance. Psychological Science 24(5).", "10.1177/0956797612459659"],
+    ["Lim & Dinges (2010). A meta-analysis of the impact of short-term sleep deprivation on cognitive variables. Psychological Bulletin 136(3).", "10.1037/a0018883"],
+    ["Park et al. (2014). The impact of sustained engagement on cognitive function in older adults: the Synapse Project. Psychological Science 25(1).", "10.1177/0956797613499592"],
+    ["Monsell (2003). Task switching. Trends in Cognitive Sciences 7(3).", "10.1016/S1364-6613(03)00028-7"],
+    ["Kessels, van Zandvoort, Postma, Kappelle & de Haan (2000). The Corsi block-tapping task: standardization and normative data. Applied Neuropsychology 7(4).", "10.1207/S15324826AN0704_8"],
+    ["Diamond & Ling (2016). Conclusions about interventions for improving executive functions. Developmental Cognitive Neuroscience 18.", "10.1016/j.dcn.2015.11.005"]
+  ];
+  $("#v-science").innerHTML = `<div><div class="eyebrow">Evidence</div><h2>What the research says</h2></div>
+  <div class="card prose">
+    <p>You will get better at every drill in this app. Whether that makes you smarter in general is a different question, and the research answer is mixed. This app is built around what holds up.</p>
+    <div class="verdict">
+      <div><span class="pill strong">Strong</span><p><b>Learning and education.</b> A meta-analysis of natural experiments found each extra year of education raises IQ by about 1 to 5 points. Reading, studying and learning skills are the most reliable path.</p></div>
+      <div><span class="pill strong">Strong</span><p><b>Retrieval practice and spacing.</b> Testing yourself, spread over days, is among the best-supported study methods. That is what the card review does.</p></div>
+      <div><span class="pill strong">Strong</span><p><b>Sleep.</b> Short sleep measurably harms attention, working memory and speed. Your training is worth less on a bad night.</p></div>
+      <div><span class="pill strong">Good</span><p><b>Aerobic exercise.</b> Improves executive function. In one trial a year of walking grew the hippocampus by about 2 percent.</p></div>
+      <div><span class="pill mixed">Mixed</span><p><b>Dual n-back.</b> The 2008 study reported gains in fluid intelligence. Later meta-analyses disagree: one finds a small positive effect, another finds near transfer to similar memory tasks but little reliable far transfer.</p></div>
+      <div><span class="pill mixed">Mixed</span><p><b>Brain-training games in general.</b> A large 2016 review found good evidence that people improve on trained tasks, less evidence for closely related tasks, and little for everyday cognition.</p></div>
+      <div><span class="pill mixed">Mixed</span><p><b>Mindfulness.</b> Short programs have improved working memory and test scores, though effect sizes vary between studies.</p></div>
+    </div>
+    <h3>How the routine uses this</h3>
+    <p><b>Adaptive difficulty.</b> Every drill keeps you near the point where you get about 80 to 90 percent right. Dual n-back uses the original study's rule: fewer than 3 errors in each stream moves you up, more than 5 in either moves you down.</p>
+    <p><b>Variety.</b> Executive function training transfers best when it is varied and keeps getting harder (Diamond & Ling 2016), so two drills rotate each day across flexibility, speed, spatial memory and reasoning.</p>
+    <p><b>Short daily sessions.</b> Studies that found effects used roughly 20 minutes a day, most days, for several weeks. A daily streak builds that habit.</p>
+    <p><b>Habits sit beside the drills</b> because they have the stronger evidence. Treat the drills as attention practice and the habits as the main event.</p>
+    <h3>Where each drill comes from</h3>
+    <p><b>Dual N-Back:</b> the Jaeggi 2008 task with 20 + N trials per block and 3 seconds per trial. <b>Rule Switch:</b> the classic odd/even and high/low task-switching paradigm (Monsell 2003). <b>Block Span:</b> a digital Corsi block-tapping test. <b>Pattern Series:</b> number-series items like those used in fluid reasoning tests. <b>Number Sprint:</b> timed arithmetic fluency.</p>
+    <h3>References</h3>
+    <ol class="refs">${R.map(r => `<li>${esc(r[0])} <a href="https://doi.org/${r[1]}" target="_blank" rel="noopener">doi:${r[1]}</a></li>`).join("")}</ol>
+  </div>`;
+}
+
+function renderAll() { renderHeader(); renderToday(); renderTrain(); renderProgress(); renderCards(); }
+
+/* ---------- stage ---------- */
+let timers = [], keyHandler = null, wakeLock = null;
+function later(fn, ms) { const id = setTimeout(fn, ms); timers.push(id); return id; }
+function clearTimers() { timers.forEach(clearTimeout); timers = []; keyHandler = null; try { speechSynthesis.cancel(); } catch (e) {} }
+function openStage(title) {
+  clearTimers(); $("#stageTitle").textContent = title; meta(""); $("#stage").hidden = false; document.body.classList.add("staged");
+  try { navigator.wakeLock && navigator.wakeLock.request("screen").then(w => { wakeLock = w; }, () => {}); } catch (e) {}
+}
+function closeStage() { clearTimers(); $("#stage").hidden = true; document.body.classList.remove("staged"); $("#stageBody").innerHTML = ""; try { wakeLock && wakeLock.release(); } catch (e) {} wakeLock = null; }
+function body(html) { $("#stageBody").innerHTML = html; }
+function meta(t) { $("#stageMeta").textContent = t; }
+$("#stageClose").onclick = closeStage;
+document.addEventListener("keydown", e => { if ($("#stage").hidden) return; if (e.key === "Escape") { closeStage(); return; } if (keyHandler) keyHandler(e); });
+function intro(html, onGo) { body(`<div class="intro">${html}<button class="btn primary big" id="go">Start</button></div>`); $("#go").onclick = onGo; $("#go").focus(); }
+function results(id, stats, change, note) {
+  const plan = planFor(today()), r = dayRec(today()), next = plan.find(x => !r.done[x]);
+  const msgs = { up: "Level up. Next round is harder.", down: "Easing off one level so you can consolidate.", same: "Holding this level. Aim for fewer errors next time." };
+  body(`<div class="res"><div class="eyebrow">Round complete</div><h2>${stepName(id)}</h2>
+    <div class="res-stats">${stats.map(s => `<div><span class="eyebrow">${s[0]}</span><b>${s[1]}</b></div>`).join("")}</div>
+    ${change ? `<div class="lvl-msg ${change}">${msgs[change]}${note ? " " + note : ""}</div>` : note ? `<div class="lvl-msg same">${note}</div>` : ""}
+    <div class="row">${next ? `<button class="btn primary big" id="rNext">Next: ${stepName(next)}</button>` : ""}<button class="btn big" id="rDone">${next ? "Back to today" : "Finish"}</button></div></div>`);
+  $("#rDone").onclick = () => { closeStage(); location.hash = "today"; };
+  const n = $("#rNext"); if (n) { n.onclick = () => startStep(next); n.focus(); } else $("#rDone").focus();
+}
+function adapt(id, up, down, min, max) {
+  const old = S.levels[id]; let nl = old;
+  if (up) nl = Math.min(max || 99, old + 1); else if (down) nl = Math.max(min || 1, old - 1);
+  S.levels[id] = nl; return nl > old ? "up" : nl < old ? "down" : "same";
+}
+
+/* ---------- drill: dual n-back ---------- */
+function runNback() {
+  openStage("Dual N-Back");
+  const n = S.levels.nback, total = 20 + n;
+  const canSpeak = "speechSynthesis" in window;
+  intro(`<div class="eyebrow">Working memory · ${n}-back</div><h2>Match what you saw and heard ${n} step${n > 1 ? "s" : ""} ago</h2>
+    <ul><li>Every 3 seconds a square lights up and a letter plays.</li>
+    <li>Press <b>Position</b> (key <kbd>A</kbd>) when the square is in the same place as ${n} step${n > 1 ? "s" : ""} back.</li>
+    <li>Press <b>Letter</b> (key <kbd>L</kbd>) when the letter is the same as ${n} step${n > 1 ? "s" : ""} back.</li>
+    <li>Both can match at once, or neither. ${total} trials, about ${Math.ceil(total * 3 / 60)} minutes.</li></ul>
+    <label class="check"><input type="checkbox" id="nbSpeak" ${canSpeak ? "checked" : "disabled"}> Speak letters aloud. Recommended, since hearing and seeing use separate memory stores. Turn off to show letters on screen instead.</label>`,
+    () => play(canSpeak && $("#nbSpeak").checked));
+  function play(speak) {
+    const LET = "CHKLQRST";
+    const gen = (arr, i, max) => { if (i >= n && Math.random() < 0.3) return arr[i - n]; let v; do { v = Math.floor(Math.random() * max); } while (i >= n && v === arr[i - n]); return v; };
+    const P = [], A = [];
+    for (let i = 0; i < total; i++) { P.push(gen(P, i, 9)); A.push(gen(A, i, LET.length)); }
+    const rp = [], ra = [];
+    body(`<div class="nb"><div class="nb-grid">${'<div class="nb-cell"></div>'.repeat(9)}</div>
+      <div class="nb-letter" id="nbLetter" ${speak ? "hidden" : ""}></div>
+      <div class="nb-btns"><button class="btn big" id="bP">Position <kbd>A</kbd></button><button class="btn big" id="bA">Letter <kbd>L</kbd></button></div></div>`);
+    const cells = $$(".nb-cell");
+    let i = -1;
+    const press = kind => {
+      if (i < n || i >= total) return;
+      const arr = kind === "p" ? rp : ra; if (arr[i]) return; arr[i] = true;
+      const src = kind === "p" ? P : A, ok = src[i] === src[i - n], b = $(kind === "p" ? "#bP" : "#bA");
+      b.classList.add(ok ? "ok" : "no"); later(() => b.classList.remove("ok", "no"), 350);
+    };
+    $("#bP").onclick = () => press("p"); $("#bA").onclick = () => press("a");
+    keyHandler = e => { const k = e.key.toLowerCase(); if (k === "a") press("p"); else if (k === "l") press("a"); };
+    const step = () => {
+      i++;
+      if (i >= total) return end();
+      meta(`Trial ${i + 1} / ${total}`);
+      const cur = i;
+      later(() => {
+        cells[P[cur]].classList.add("on");
+        const letter = LET[A[cur]];
+        if (speak) { try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(letter); u.rate = 1; speechSynthesis.speak(u); } catch (e) {} }
+        else $("#nbLetter").textContent = letter;
+        later(() => { cells[P[cur]].classList.remove("on"); if (!speak) $("#nbLetter").textContent = ""; }, 500);
+      }, 80);
+      later(step, 3000);
+    };
+    meta("Get ready"); later(step, 1000);
+    function end() {
+      let eP = 0, eA = 0, hitP = 0, hitA = 0, tP = 0, tA = 0;
+      for (let j = n; j < total; j++) {
+        const mp = P[j] === P[j - n], ma = A[j] === A[j - n];
+        if (mp) tP++; if (ma) tA++;
+        if (mp !== !!rp[j]) eP++; else if (mp) hitP++;
+        if (ma !== !!ra[j]) eA++; else if (ma) hitA++;
+      }
+      const acc = 1 - (eP + eA) / (2 * (total - n));
+      const ch = adapt("nback", eP < 3 && eA < 3, eP > 5 || eA > 5, 1, 12);
+      finish("nback", { lvl: n, acc: acc });
+      results("nback", [["Level", n + "-back"], ["Accuracy", pct(acc)], ["Position errors", eP], ["Letter errors", eA], ["Position hits", hitP + "/" + tP], ["Letter hits", hitA + "/" + tA]], ch, "Next round: " + S.levels.nback + "-back.");
+    }
+  }
+}
+
+/* ---------- drill: rule switch ---------- */
+function runSwitch() {
+  openStage("Rule Switch");
+  const L = S.levels["switch"], deadline = Math.max(900, 3200 - 250 * (L - 1)), total = 32;
+  intro(`<div class="eyebrow">Cognitive flexibility · level ${L}</div><h2>Follow the cue, not the habit</h2>
+    <ul><li><b style="color:var(--accent)">Blue frame:</b> is the digit odd or even?</li>
+    <li><b style="color:var(--warm)">Orange frame:</b> is it lower or higher than 5?</li>
+    <li>Left button (<kbd>F</kbd> or <kbd>←</kbd>) means <b>odd / low</b>. Right button (<kbd>J</kbd> or <kbd>→</kbd>) means <b>even / high</b>.</li>
+    <li>${total} digits. You have ${(deadline / 1000).toFixed(2)} seconds each. Be fast and accurate.</li></ul>`, play);
+  function play() {
+    const log = []; let i = -1, rule = null, digit = 0, t0 = 0, waiting = false, tid = null;
+    body(`<div class="sw-card" id="swCard"><span class="sw-cue" id="swCue"></span><span class="sw-digit" id="swDigit"></span></div>
+      <div class="bar"><i id="swBar"></i></div>
+      <div class="sw-btns"><button class="btn big" id="bL">◀ Odd · Low</button><button class="btn big" id="bR">Even · High ▶</button></div>`);
+    const card = $("#swCard"), bar = $("#swBar");
+    $("#bL").onclick = () => respond("L"); $("#bR").onclick = () => respond("R");
+    keyHandler = e => { const k = e.key.toLowerCase(); if (k === "f" || k === "arrowleft") respond("L"); else if (k === "j" || k === "arrowright") respond("R"); };
+    function next() {
+      i++; if (i >= total) return end();
+      meta(`${i + 1} / ${total}`);
+      const prev = rule; rule = prev === null ? pick(["par", "mag"]) : (Math.random() < 0.4 ? (prev === "par" ? "mag" : "par") : prev);
+      digit = pick([1, 2, 3, 4, 6, 7, 8, 9]);
+      card.className = "sw-card " + rule;
+      $("#swCue").textContent = rule === "par" ? "Odd or even?" : "Low or high?";
+      $("#swDigit").textContent = digit;
+      bar.style.transition = "none"; bar.style.width = "100%"; void bar.offsetWidth;
+      bar.style.transition = `width ${deadline}ms linear`; bar.style.width = "0%";
+      t0 = performance.now(); waiting = true;
+      log.push({ sw: prev !== null && prev !== rule, first: prev === null });
+      tid = later(() => respond(null), deadline);
+    }
+    function respond(side) {
+      if (!waiting) return; waiting = false; clearTimeout(tid);
+      const want = rule === "par" ? (digit % 2 ? "L" : "R") : (digit < 5 ? "L" : "R");
+      const ok = side === want, e = log[log.length - 1];
+      e.ok = ok; e.rt = performance.now() - t0;
+      card.classList.add(ok ? "ok" : "no");
+      $("#swDigit").textContent = ok ? digit : side === null ? "Time" : digit;
+      later(() => { card.classList.remove("ok", "no"); next(); }, ok ? 250 : 650);
+    }
+    later(next, 600);
+    function end() {
+      const correct = log.filter(x => x.ok).length, acc = correct / total;
+      const rRep = log.filter(x => x.ok && !x.sw && !x.first).map(x => x.rt), rSw = log.filter(x => x.ok && x.sw).map(x => x.rt);
+      const cost = rRep.length && rSw.length ? Math.round(mean(rSw) - mean(rRep)) : null;
+      const ch = adapt("switch", acc >= 0.9, acc < 0.75, 1, 10);
+      finish("switch", { lvl: L, acc: acc });
+      results("switch", [["Accuracy", pct(acc)], ["Avg time", Math.round(mean(log.filter(x => x.ok).map(x => x.rt)) || 0) + " ms"], ["Switch cost", cost === null ? "–" : cost + " ms"]], ch,
+        "Switch cost is how much slower you are right after the rule changes. A smaller number means more flexible control.");
+    }
+  }
+}
+
+/* ---------- drill: number sprint ---------- */
+function mathProblem(L) {
+  const k = pick({ 1: ["a1"], 2: ["a2s", "s2s"], 3: ["a2", "s2"], 4: ["m"], 5: ["m21", "d"], 6: ["m22", "a3", "s3"], 7: ["m22", "d", "sq", "m21"] }[Math.min(L, 7)]);
+  let a, b;
+  switch (k) {
+    case "a1": a = rand(1, 9); b = rand(1, 9); return { q: `${a} + ${b}`, a: a + b };
+    case "a2s": a = rand(10, 89); b = rand(2, 9); return { q: `${a} + ${b}`, a: a + b };
+    case "s2s": a = rand(12, 99); b = rand(2, 9); return { q: `${a} − ${b}`, a: a - b };
+    case "a2": a = rand(11, 89); b = rand(11, 89); return { q: `${a} + ${b}`, a: a + b };
+    case "s2": a = rand(30, 99); b = rand(11, a - 1); return { q: `${a} − ${b}`, a: a - b };
+    case "m": a = rand(2, 12); b = rand(2, 12); return { q: `${a} × ${b}`, a: a * b };
+    case "m21": a = rand(12, 49); b = rand(3, 9); return { q: `${a} × ${b}`, a: a * b };
+    case "d": b = rand(3, 12); a = b * rand(3, 15); return { q: `${a} ÷ ${b}`, a: a / b };
+    case "m22": a = rand(11, 29); b = rand(11, 19); return { q: `${a} × ${b}`, a: a * b };
+    case "a3": a = rand(120, 899); b = rand(110, 899); return { q: `${a} + ${b}`, a: a + b };
+    case "s3": a = rand(300, 999); b = rand(110, a - 50); return { q: `${a} − ${b}`, a: a - b };
+    case "sq": a = rand(11, 25); return { q: `${a}²`, a: a * a };
+  }
+}
+function runMath() {
+  openStage("Number Sprint");
+  const L = S.levels.math, secs = 60;
+  intro(`<div class="eyebrow">Processing speed · level ${L}</div><h2>Solve as many as you can in 60 seconds</h2>
+    <ul><li>Type the answer with the keypad or your keyboard. It checks itself once you have typed enough digits.</li>
+    <li>Use <b>Skip</b> (or <kbd>Enter</kbd>) to pass on a problem. Skips count as misses.</li>
+    <li>15 or more correct at 90% accuracy moves you up a level.</li></ul>`, play);
+  function play() {
+    let p = mathProblem(L), entry = "", correct = 0, wrong = 0, endAt = performance.now() + secs * 1000, over = false;
+    body(`<div class="mx-q" id="mxQ"></div><div class="mx-a" id="mxA"></div>
+      <div class="pad">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(d => `<button class="btn" data-k="${d}">${d}</button>`).join("")}<button class="btn" data-k="back" aria-label="Delete">⌫</button><button class="btn" data-k="0">0</button><button class="btn" data-k="skip">Skip</button></div>`);
+    const show = () => { $("#mxQ").textContent = p.q + " ="; $("#mxA").textContent = entry || " "; };
+    const nextP = () => { let np; do { np = mathProblem(L); } while (np.q === p.q); p = np; entry = ""; show(); };
+    const key = k => {
+      if (over) return;
+      if (k === "back") { entry = entry.slice(0, -1); show(); return; }
+      if (k === "skip") { wrong++; nextP(); return; }
+      entry += k; show();
+      const want = String(p.a);
+      if (entry === want) { correct++; nextP(); }
+      else if (entry.length >= want.length) { wrong++; const a = $("#mxA"); a.classList.add("no"); over = true; later(() => { a.classList.remove("no"); over = false; nextP(); }, 400); }
+    };
+    $$("[data-k]").forEach(b => b.onclick = () => key(b.dataset.k));
+    keyHandler = e => { if (/^[0-9]$/.test(e.key)) key(e.key); else if (e.key === "Backspace") key("back"); else if (e.key === "Enter") key("skip"); };
+    show();
+    const tick = () => { const left = Math.max(0, Math.ceil((endAt - performance.now()) / 1000)); meta(`${left}s · ${correct} correct`); if (left <= 0) return end(); later(tick, 200); };
+    tick();
+    function end() {
+      over = true; keyHandler = null;
+      const acc = correct + wrong ? correct / (correct + wrong) : 0;
+      const ch = adapt("math", correct >= 15 && acc >= 0.9, correct < 6 || acc < 0.7, 1, 7);
+      finish("math", { lvl: L, acc: acc, score: correct });
+      results("math", [["Correct", correct], ["Accuracy", pct(acc)], ["Per minute", correct]], ch);
+    }
+  }
+}
+
+/* ---------- drill: block span (Corsi) ---------- */
+function runSpan() {
+  openStage("Block Span");
+  let span = Math.min(9, Math.max(2, S.levels.span));
+  const trials = 8;
+  intro(`<div class="eyebrow">Visuospatial memory · starts at ${span} blocks</div><h2>Repeat the sequence</h2>
+    <ul><li>Blocks light up one at a time. Watch the order.</li>
+    <li>When it says <b>Your turn</b>, tap them in the same order.</li>
+    <li>Get it right and the next sequence is one longer. Miss twice in a row and it gets one shorter. ${trials} sequences in total.</li></ul>`, play);
+  function play() {
+    const slots = shuffle([...Array(16).keys()]).slice(0, 9);
+    body(`<div class="sp-msg" id="spMsg">Watch</div><div class="board locked" id="board">${slots.map((s, i) => { const r = Math.floor(s / 4), c = s % 4; return `<button class="blk" data-b="${i}" style="left:${3 + c * 24 + rand(0, 2)}%;top:${3 + r * 24 + rand(0, 2)}%" aria-label="Block ${i + 1}"></button>`; }).join("")}</div>`);
+    const blocks = $$(".blk"), board = $("#board"), msg = $("#spMsg");
+    let t = 0, best = 0, fails = 0, seq = [], pos = 0, input = false;
+    blocks.forEach(b => b.onclick = () => tap(+b.dataset.b));
+    function trial() {
+      if (t >= trials) return end();
+      t++; meta(`Sequence ${t} / ${trials} · ${span} blocks`);
+      seq = shuffle([...Array(9).keys()]).slice(0, span); pos = 0; input = false;
+      board.classList.add("locked"); msg.textContent = "Watch";
+      seq.forEach((b, k) => { later(() => blocks[b].classList.add("on"), 700 + k * 900); later(() => blocks[b].classList.remove("on"), 700 + k * 900 + 650); });
+      later(() => { input = true; board.classList.remove("locked"); msg.textContent = "Your turn"; }, 700 + seq.length * 900);
+    }
+    function tap(b) {
+      if (!input) return;
+      blocks[b].classList.add("hit"); later(() => blocks[b].classList.remove("hit"), 220);
+      if (b !== seq[pos]) { input = false; fails++; msg.textContent = "Not quite"; if (fails >= 2) { span = Math.max(2, span - 1); fails = 0; } later(trial, 1100); return; }
+      pos++;
+      if (pos === seq.length) { input = false; best = Math.max(best, span); fails = 0; msg.textContent = "Correct"; span = Math.min(9, span + 1); later(trial, 900); }
+    }
+    later(trial, 300);
+    function end() {
+      const old = S.levels.span; S.levels.span = Math.max(3, Math.min(9, best ? best : span));
+      const ch = S.levels.span > old ? "up" : S.levels.span < old ? "down" : "same";
+      finish("span", { lvl: best || span - 1, acc: null });
+      results("span", [["Longest sequence", best || "–"], ["Next start", S.levels.span + " blocks"]], ch, "Typical adult forward span is about 5 to 7 blocks.");
+    }
+  }
+}
+
+/* ---------- drill: pattern series ---------- */
+const SERIES = {
+  arith: () => { const neg = Math.random() < 0.3, d = rand(2, 9) * (neg ? -1 : 1), s = neg ? rand(50, 90) : rand(1, 20); return [0, 1, 2, 3, 4, 5].map(k => s + k * d); },
+  geo: () => { const s = rand(1, 5), m = rand(2, 3); return [0, 1, 2, 3, 4, 5].map(k => s * Math.pow(m, k)); },
+  incr: () => { let v = rand(1, 10), d = rand(1, 4); const st = rand(1, 3), o = [v]; for (let k = 0; k < 5; k++) { v += d; d += st; o.push(v); } return o; },
+  inter: () => { const a = rand(1, 10), da = rand(2, 5), b = rand(20, 40), db = -rand(1, 4); return [0, 1, 2, 3, 4, 5, 6].map(k => k % 2 ? b + ((k - 1) / 2) * db : a + (k / 2) * da); },
+  fib: () => { const o = [rand(1, 5), rand(2, 7)]; while (o.length < 7) o.push(o[o.length - 1] + o[o.length - 2]); return o; },
+  sq: () => { const c = rand(-3, 5), s = rand(1, 4); return [0, 1, 2, 3, 4, 5].map(k => (s + k) * (s + k) + c); },
+  affine: () => { let v = rand(1, 4); const m = 2, c = rand(1, 3), o = [v]; for (let k = 0; k < 5; k++) { v = v * m + c; o.push(v); } return o; },
+  altop: () => { let v = rand(1, 6); const a = rand(2, 5), m = rand(2, 3), o = [v]; for (let k = 0; k < 6; k++) { v = k % 2 ? v * m : v + a; o.push(v); } return o; },
+  dbl: () => { let v = rand(1, 9), d = rand(1, 3); const o = [v]; for (let k = 0; k < 5; k++) { v += d; d *= 2; o.push(v); } return o; }
+};
+const SERIES_POOL = { 1: ["arith"], 2: ["arith", "geo"], 3: ["arith", "geo", "incr", "inter"], 4: ["geo", "incr", "inter", "fib", "sq"], 5: ["incr", "inter", "fib", "sq", "affine", "altop", "dbl"] };
+function runSeries() {
+  openStage("Pattern Series");
+  const L = S.levels.series, total = 8, limit = 30000;
+  intro(`<div class="eyebrow">Fluid reasoning · level ${L}</div><h2>What comes next?</h2>
+    <ul><li>Each row of numbers follows a hidden rule. Work it out and pick the next number.</li>
+    <li>Rules can add, multiply, alternate between two sequences, or change the step each time.</li>
+    <li>${total} puzzles, 30 seconds each. 7 or more correct moves you up a level.</li></ul>`, play);
+  function play() {
+    let i = -1, correct = 0, tid = null, cur = null;
+    function next() {
+      i++; if (i >= total) return end();
+      meta(`${i + 1} / ${total} · ${correct} correct`);
+      const full = SERIES[pick(SERIES_POOL[Math.min(L, 5)])](), ans = full[full.length - 1], terms = full.slice(0, -1);
+      const last = terms[terms.length - 1], prev = terms[terms.length - 2], step = Math.max(1, Math.abs(ans - last));
+      const cands = [last + (last - prev), ans + 1, ans - 1, ans + 2, ans - 2, ans + step, ans - step, Math.round(ans * 1.5), ans + 10];
+      const opts = [ans];
+      cands.forEach(c => { if (opts.length < 4 && c !== ans && !opts.includes(c)) opts.push(c); });
+      cur = { ans: ans };
+      body(`<div class="sr-terms">${terms.map(x => `<span>${x}</span>`).join("")}<span class="q">?</span></div><div class="bar"><i id="srBar"></i></div>
+        <div class="opts">${shuffle(opts).map(o => `<button class="btn" data-o="${o}">${o}</button>`).join("")}</div>`);
+      const bar = $("#srBar"); bar.style.transition = "none"; bar.style.width = "100%"; void bar.offsetWidth; bar.style.transition = `width ${limit}ms linear`; bar.style.width = "0%";
+      $$("[data-o]").forEach(b => b.onclick = () => answer(+b.dataset.o, b));
+      keyHandler = e => { const n = +e.key; const bs = $$("[data-o]"); if (n >= 1 && n <= bs.length) bs[n - 1].click(); };
+      tid = later(() => answer(null, null), limit);
+    }
+    function answer(v, btn) {
+      if (!cur) return; clearTimeout(tid);
+      const ok = v === cur.ans; if (ok) correct++;
+      $$("[data-o]").forEach(b => { b.disabled = true; if (+b.dataset.o === cur.ans) b.classList.add("ok"); });
+      if (btn && !ok) btn.classList.add("no");
+      $(".sr-terms .q").textContent = cur.ans; cur = null;
+      later(next, ok ? 700 : 1500);
+    }
+    later(next, 200);
+    function end() {
+      const acc = correct / total;
+      const ch = adapt("series", correct >= 7, correct <= 4, 1, 5);
+      finish("series", { lvl: L, acc: acc });
+      results("series", [["Correct", correct + "/" + total], ["Accuracy", pct(acc)]], ch, L >= 5 && ch !== "down" ? "You are at the top level. Keep accuracy at 100%." : "");
+    }
+  }
+}
+
+/* ---------- review ---------- */
+function runReview() {
+  openStage("Card Review");
+  const due = shuffle(dueCards()).slice(0, 20);
+  if (!due.length) {
+    body(`<div class="res"><h2>Nothing due today</h2><p class="muted">Every card is scheduled for later. Add cards about what you are learning in the Cards tab so tomorrow's review has something new.</p><div class="row"><button class="btn primary big" id="ok">Mark review done</button></div></div>`);
+    $("#ok").onclick = () => { finish("review", { lvl: 0, acc: null }); closeStage(); };
+    return;
+  }
+  const queue = due.slice(), lapsed = new Set(); let known = 0, seen = 0;
+  function next() {
+    if (!queue.length) return end();
+    const c = queue.shift(); meta(`${queue.length} left`);
+    body(`<div class="fc"><div class="eyebrow">Recall it before you reveal</div><div class="front">${esc(c.front)}</div><div class="back" id="fcBack" hidden>${esc(c.back)}</div></div>
+      <div class="row" id="fcA"><button class="btn primary big" id="rev">Show answer <kbd>Space</kbd></button></div>`);
+    const reveal = () => {
+      $("#fcBack").hidden = false;
+      $("#fcA").innerHTML = `<button class="btn big" id="no">Didn't know <kbd>1</kbd></button><button class="btn primary big" id="yes">Knew it <kbd>2</kbd></button>`;
+      $("#no").onclick = () => grade(false); $("#yes").onclick = () => grade(true);
+      keyHandler = e => { if (e.key === "1") grade(false); else if (e.key === "2") grade(true); };
+    };
+    const grade = ok => {
+      seen++; const t = today();
+      if (ok) { if (!lapsed.has(c.id)) known++; c.box = Math.min(IV.length - 1, c.box + 1); c.due = addDays(t, IV[c.box]); }
+      else { c.box = 0; c.due = addDays(t, 1); if (!lapsed.has(c.id)) { lapsed.add(c.id); queue.push(c); } }
+      save(); next();
+    };
+    $("#rev").onclick = reveal;
+    keyHandler = e => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); reveal(); } };
+  }
+  next();
+  function end() {
+    const acc = known / due.length;
+    finish("review", { lvl: due.length, acc: acc });
+    results("review", [["Cards", due.length], ["Known first try", pct(acc)]], null, "Missed cards come back tomorrow. Known cards wait longer each time.");
+  }
+}
+
+/* ---------- breathing timer ---------- */
+function runBreath() {
+  openStage("Breathing focus");
+  body(`<div class="intro"><div class="eyebrow">Attention</div><h2>Focused-attention breathing</h2>
+    <ul><li>Sit upright. Follow the circle: in for 4 seconds, out for 6.</li><li>When your mind wanders, notice it without judging and bring attention back to the breath. Each return is one repetition.</li></ul>
+    <div class="row"><button class="btn primary big" data-m="10">10 minutes</button><button class="btn big" data-m="5">5 minutes</button></div></div>`);
+  $$("[data-m]").forEach(b => b.onclick = () => go(+b.dataset.m));
+  function go(mins) {
+    const endAt = performance.now() + mins * 60000;
+    body(`<div class="breath"><i id="dot"></i></div><div class="sp-msg" id="bMsg">Breathe in</div><div class="breath-t mono" id="bT"></div>`);
+    const dot = $("#dot");
+    const cycle = inhale => { $("#bMsg").textContent = inhale ? "Breathe in" : "Breathe out"; dot.style.transitionDuration = inhale ? "4s" : "6s"; dot.style.transform = inhale ? "scale(2.2)" : "scale(1)"; later(() => cycle(!inhale), inhale ? 4000 : 6000); };
+    later(() => cycle(true), 50);
+    const tick = () => {
+      const left = Math.max(0, endAt - performance.now()), s = Math.ceil(left / 1000);
+      $("#bT").textContent = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+      if (left <= 0) {
+        clearTimers(); if (mins >= 10) { dayRec(today()).habits.focus = true; save(); renderAll(); }
+        body(`<div class="res"><h2>Session complete</h2><p class="muted">${mins >= 10 ? "Mindfulness habit checked off for today." : "Five minutes done. The habit counts at ten, so you can tick it yourself if you did more."}</p><div class="row"><button class="btn primary big" id="bd">Done</button></div></div>`);
+        $("#bd").onclick = closeStage; return;
+      }
+      later(tick, 250);
+    };
+    tick();
+  }
+}
+
+const RUN = { nback: runNback, "switch": runSwitch, math: runMath, span: runSpan, series: runSeries };
+
+/* ---------- boot ---------- */
+renderAll(); renderScience(); show(location.hash.slice(1));
+let lastDay = today();
+setInterval(() => { if (today() !== lastDay && $("#stage").hidden) { lastDay = today(); renderAll(); } }, 60000);
+})();
+</script>
